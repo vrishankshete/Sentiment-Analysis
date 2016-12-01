@@ -1,0 +1,53 @@
+		BufferedReader br = new BufferedReader(new FileReader(input_test));
+		BufferedWriter bw = new BufferedWriter(new FileWriter(output_test));
+		int lineNo=0;
+		String sCurrentLine = null;
+		while ((sCurrentLine = br.readLine()) != null)
+		{
+			java.util.Arrays.fill(features_arr, 0);
+			lineNo++;
+			sCurrentLine = sCurrentLine.toLowerCase();
+			String strArr[] = new String[10000];
+			int nGramCount = 0;
+
+			String [] splitLine = sCurrentLine.split("\t");
+			String line = splitLine[0];
+			for (int n = 1; n <= n_gram; n++)
+			{
+				for (String ngram : ngrams(n, line))
+				{
+					strArr[nGramCount++] = ngram;
+				}
+			}
+			
+			for(int i=0; i<nGramCount; i++)
+			{
+				if(!stopwordHashSet.contains(strArr[i]))
+				{
+					if(support_Vector.containsKey(strArr[i]))
+					{
+						features_arr[support_Vector.get(strArr[i])] = 1;
+					}
+				}
+			}
+
+
+			features_arr = createVector_addSentiLbels(line, features_arr);
+
+			String classLabel = "0";
+			try{
+				classLabel = splitLine[1];
+			}
+			catch(Exception e){
+				System.out.println(sCurrentLine + "   TEST   " + lineNo);
+			}
+
+
+
+			//System.out.println("Index "+support_Vector.get("POSITIVE_COUNT"));
+
+
+			writeToFile(bw, features_arr, classLabel);
+		}
+		bw.close();
+		br.close();

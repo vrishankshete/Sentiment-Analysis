@@ -1,0 +1,348 @@
+package com.vrishank.SentAnalysis.Classifier;
+
+/*This is the main class where feature vectors are created
+ */
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.TreeMap;
+class ScoreAndLabel
+{
+	String classLabel;
+	double score;
+
+	public String getClassLabel() {
+		return classLabel;
+	}
+	public void setClassLabel(String classLabel) {
+		this.classLabel = classLabel;
+	}
+	public double getScore() {
+		return score;
+	}
+	public void setScore(double score) {
+		this.score = score;
+	}
+}
+
+public class CodeMixedClassifier
+{
+	public static HashSet<String> stopwordHashSet = new HashSet<String>(Arrays.asList("a","about","above",
+			"after","again","against","all","am","an","and","any","are","as","at","be","because",
+			"been","before","being","below","between","both","by","could","did","do","does",
+			"doing","down","during","each","for","from","further","had","has","have","having",
+			"he","he'd","he'll","he's","her","here","here's","hers","herself","him","himself",
+			"his","how","how's","i","i'd","i'll","i'm","i've","in","into","is","it","it's","its",
+			"itself","let's","me","my","myself","of","off","on","once","only","or","other","ought",
+			"our","ours","ourselves","out","over","own","same","she","she'd","she'll","she's",
+			"should","so","some","such","than","that","that's","the","their","theirs","them",
+			"themselves","then","there","there's","these","they","they'd","they'll","they're",
+			"they've","this","those","through","to","under","until","up","very","was","we","we'd",
+			"we'll","we're","we've","were","what","what's","when","when's","where","where's",
+			"which","while","who","who's","whom","why","why's","with","won't","would","you",
+			"you'd","you'll","you're","you've","your","yours","yourself","yourselves"));
+	public static HashSet<String> negativeWordsHashSet = new HashSet<String>(Arrays.asList("not","nor","never","n't","no","neither","nowhere"));
+	public static HashSet<String> conjunctionsHashSet = new HashSet<String>(Arrays.asList(".",",",":",";","!","?","\\", "^", "/", "@", "~", "!", "$", "%", "&", "*", "(", ")", "+", "-", "_", "[" , "]", "{", "}" , "|"));
+	public static TreeMap<String, Integer> support_Vector = new TreeMap<String, Integer>();
+	public static HashMap<String, String> wordToPOSMap = new HashMap<String, String>();
+	public static HashMap<String, String> POSInMemory = new HashMap<String, String>();
+	public static int indexCounter = 0;
+	public static int n_gram = 2;
+	public static HashMap<String, ScoreAndLabel> sentiScoreMap = new HashMap<String, ScoreAndLabel>();
+	public static float total_count=0;
+	public static HashMap<String, Positive_negative_score> word_score_map = new HashMap<String, Positive_negative_score>();
+	public static String englishSentiWordNet;
+	public static String hindiSentiWordNet;
+
+	public static List<String> ngrams(int n, String str)
+	{
+		List<String> ngrams = new ArrayList<String>();
+		String[] words = str.split(" ");
+		for (int i = 0; i < words.length - n + 1; i++)
+			ngrams.add(concat(words, i, i+n));
+		return ngrams;
+	}
+	public static String concat(String[] words, int start, int end)
+	{
+		StringBuilder sb = new StringBuilder();
+		for (int i = start; i < end; i++)
+			sb.append((i > start ? " " : "") + words[i]);
+		return sb.toString();
+	}
+
+	public static void addInMap(String str)
+	{
+		for (int n = 1; n <= n_gram; n++)
+		{
+			for (String ngram : ngrams(n, str))
+			{
+				if(!stopwordHashSet.contains(ngram)){
+					if(!support_Vector.containsKey(ngram))
+					{
+						support_Vector.put(ngram, indexCounter++);
+					}
+				}
+			}
+		}
+	}
+	public static void loadMaps(){
+
+		try{
+			BufferedReader br = new BufferedReader(new FileReader(hindiSentiWordNet));
+			String str = null;
+			if((str = br.readLine())!=null){
+				try{
+					String []arr1 = str.split(",");
+					String []arr2 = arr1[1].split(" ");
+					word_score_map.put(arr1[0], new Positive_negative_score(Float.parseFloat(arr2[0]), Float.parseFloat(arr2[1])));
+				}
+				catch(Exception e){
+					System.out.println("Error in parsing Hindi Sentiwordnet");
+					e.printStackTrace();
+				}
+			}
+			br.close();
+		}
+		catch(Exception e){
+			e.printStackTrace();
+		}
+
+	}
+
+	public static void writeToFile(BufferedWriter bw, double[] features_arr, String classLabel) throws Exception{
+		int flag = 0;
+		for(int i = 0 ; i < features_arr.length ; i++){
+			if(features_arr[i] != 0)
+			{
+				flag = 1;
+				break;
+			}
+		}
+		if(flag == 0)
+		{
+			bw.write("0 " + support_Vector.size() + ":1.0");
+		}
+		else
+		{
+			bw.write(classLabel);
+			for(int i=0; i<features_arr.length; i++)
+				if(features_arr[i]!=0)
+					bw.write(" "+(i+1)+":"+features_arr[i]);
+		}
+		bw.write("\n");
+	}
+
+	public static void generateVector_add_n_grams(String input_train){
+		BufferedReader br = null;
+		String sCurrentLine = null;
+		try
+		{
+			br = new BufferedReader(new FileReader(input_train));
+			while ((sCurrentLine = br.readLine()) != null)
+			{
+				sCurrentLine = sCurrentLine.toLowerCase();
+				addInMap(sCurrentLine.split("\t")[0]); 					//addInMap will create a vector of unique unigrams, bigrams, etc
+			}
+			br.close();
+		}
+		catch(Exception e){
+			e.printStackTrace();
+		}
+	}
+
+	public static double[] createVector_addSentiLbels(SentiWordNet s, String line, double []features_arr ){
+		int pos_count=0, neg_count=0;
+		double pos_score=0, cur_pos, cur_neg, neg_score=0, max_pos=0, max_neg=0;
+		for (String ngram : ngrams(1, line))
+		{
+			pos_score=0;
+			neg_score=0;
+			max_neg=0;
+			max_pos=0;
+
+			if(s.extract(ngram)>0){
+				cur_pos = s.extract(ngram);
+				if(cur_pos>0){
+					pos_count++;
+					pos_score += cur_pos;
+					if(cur_pos>max_pos){
+						max_pos = cur_pos;
+					}
+				}
+			}
+			else if(s.extract(ngram)<0){
+				cur_neg = s.extract(ngram);
+				if(cur_neg>0){
+					neg_count++;
+					neg_score += cur_neg;
+					if(cur_neg>max_neg){
+						max_neg = cur_neg;
+					}
+				}
+			}
+
+			if(word_score_map.containsKey(ngram)){
+				Positive_negative_score p = word_score_map.get(ngram);
+				cur_pos = p.getPositive_score();
+				cur_neg = p.getNegative_score();
+				if(cur_pos>0){
+					pos_count++;
+					pos_score += cur_pos;
+					if(cur_pos>max_pos){
+						max_pos = cur_pos;
+					}
+				}
+				if(cur_neg>0){
+					neg_count++;
+					neg_score += cur_neg;
+					if(cur_neg>max_neg){
+						max_neg = cur_neg;
+					}
+				}
+			}
+		}
+
+		features_arr[support_Vector.get("POSITIVE_COUNT")] = pos_count;
+		features_arr[support_Vector.get("NEGATIVE_COUNT")] = neg_count;
+		features_arr[support_Vector.get("MAX_POSITIVE")] = max_pos;
+		features_arr[support_Vector.get("MAX_NEGATIVE")] = max_neg;
+		features_arr[support_Vector.get("TOT_POSITIVE")] = pos_score;
+		features_arr[support_Vector.get("TOT_NEGATIVE")] = neg_score;
+
+		return features_arr;
+	}
+
+	public static double[] createVector_add_n_grams(String line, double []features_arr){
+		String strArr[] = new String[10000];
+		int nGramCount = 0;
+		for (int n = 1; n <= n_gram; n++)
+		{
+			for (String ngram : ngrams(n, line))
+			{
+				strArr[nGramCount++] = ngram;
+			}
+		}
+		
+		for(int i=0; i<nGramCount; i++)
+		{
+			if(!stopwordHashSet.contains(strArr[i]))
+			{
+				if(support_Vector.containsKey(strArr[i]))
+				{
+					features_arr[support_Vector.get(strArr[i])] = 1;
+				}
+
+			}
+		}
+		return features_arr;
+	}
+	
+ 	public static void generateVector_addSentiLabels(){
+		support_Vector.put("POSITIVE_COUNT", indexCounter++);
+		support_Vector.put("NEGATIVE_COUNT", indexCounter++);
+		support_Vector.put("MAX_POSITIVE", indexCounter++);
+		support_Vector.put("MAX_NEGATIVE", indexCounter++);
+		support_Vector.put("TOT_POSITIVE", indexCounter++);
+		support_Vector.put("TOT_NEGATIVE", indexCounter++);
+	}
+
+	public static void createFeatureVector(String input_File, String output_File) throws Exception{
+		SentiWordNet s = new SentiWordNet();
+		//System.out.println("Here");
+		long t1 = System.currentTimeMillis();
+		BufferedReader br = null;
+		BufferedWriter bw = null;
+
+		double []features_arr = new double[support_Vector.size()+1];
+
+		br = new BufferedReader(new FileReader(input_File));
+		bw = new BufferedWriter(new FileWriter(output_File));
+		String sCurrentLine = null;
+		int lineNo = 0;
+		//System.out.println("Here1");
+		while ((sCurrentLine = br.readLine()) != null)						//For each line in train dataset, create vector
+		{
+			//System.out.println("Here2");
+			java.util.Arrays.fill(features_arr, 0);
+			lineNo++;
+			sCurrentLine = sCurrentLine.toLowerCase();
+			String [] splitLine = sCurrentLine.split("\t");
+			String line = splitLine[0];
+			
+			features_arr = createVector_add_n_grams(line, features_arr);
+			features_arr = createVector_addSentiLbels(s, line, features_arr);
+
+			String classLabel = "0";
+			try{
+				classLabel = splitLine[1];
+			}
+			catch(Exception e){
+				System.out.println(sCurrentLine + "   TRAIN   " + lineNo);
+			}
+			writeToFile(bw, features_arr, classLabel);
+		}
+		bw.close();
+		br.close();
+		//System.out.println("Here3");
+		long t2 = System.currentTimeMillis();
+		System.out.println("Feature vector created in "+(t2-t1)+" sec. Output File Name: "+output_File);
+	}
+
+	public static void main(String[] args) throws Exception
+	{
+		/*
+		 * Args:
+		 * 0  Test/Train folder path
+		 * 1  Train file name (Tagged comments)
+		 * 2  Test file name (Tagged comments)
+		 * 3  Folder name where output files to be stored (SVM input folder path) 
+		 * 4  Hindi Sentiword Net file name (full path)
+		 * 5  English Sentiword Net file name (full path)
+		 */
+
+		hindiSentiWordNet = args[4];
+		englishSentiWordNet = args[5];
+
+		System.out.println("loading maps");
+		//load Hindi SentiwordNet
+		loadMaps();
+
+		System.out.println("Creating Vector..");
+
+		if(args.length != 6){
+			System.out.println("ERROR... Usage: java CodeMixedClassifier TraininputFileName TestInput outputFileName");
+			System.exit(0);
+		}
+		String tagged_comments_folder_path = args[0];
+		String train_fileName = args[1];
+		String test_fileName = args[2];
+		String SVMInputPath = args[3];
+
+		String input_train = tagged_comments_folder_path + train_fileName;//"/home/ubuntu/SentiRawData/train_comments_elong_final.txt";
+		String input_test = tagged_comments_folder_path + test_fileName;//"/home/ubuntu/SentiRawData/test_comments_elong_final.txt";
+		String output_train = SVMInputPath + "Vector_"+train_fileName;//"/home/ubuntu/SentiRawData/train_comments_elong_final_output.txt";
+		String output_test = SVMInputPath + "Vector_"+test_fileName;//"/home/ubuntu/SentiRawData/test_comments_elong_final_output.txt";
+
+		String sCurrentLine = null;
+		try
+		{
+			generateVector_add_n_grams(input_train);
+			generateVector_addSentiLabels();
+			System.out.println("SIZE: "+support_Vector.size()+" indexCounter= "+indexCounter);
+			createFeatureVector(input_train, output_train);
+			createFeatureVector(input_test, output_test);
+			System.out.println("Creating Vector..");
+		}
+		catch (Exception e)
+		{
+			System.out.println(sCurrentLine);
+			e.printStackTrace();
+		}
+	}
+}

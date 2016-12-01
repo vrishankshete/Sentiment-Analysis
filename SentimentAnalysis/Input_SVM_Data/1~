@@ -1,0 +1,20 @@
+int flag = 0;
+			for(int i = 0 ; i < features_arr.length ; i++){
+				if(features_arr[i] != 0)
+				{
+					flag = 1;
+					break;
+				}
+			}
+			if(flag == 0)
+			{
+				bw.write("0 " + support_Vector.size() + ":1.0");
+			}
+			else
+			{
+				bw.write(classLabel);
+				for(int i=0; i<features_arr.length; i++)
+					if(features_arr[i]!=0)
+						bw.write(" "+(i+1)+":"+features_arr[i]);
+			}
+			bw.write("\n");
